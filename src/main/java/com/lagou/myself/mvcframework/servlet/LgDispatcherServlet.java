@@ -5,11 +5,10 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
 
 /**
  * 其实是作为前端控制器
@@ -27,7 +26,10 @@ public class LgDispatcherServlet extends HttpServlet {
 
     private Properties properties=new Properties();
 
+    // 缓存扫描到的类的全限定类名
     private List<String> classNames=new ArrayList<>();
+
+    private Map<String, Object> ioc=new HashMap<>();
 
     @Override
     public void init(ServletConfig config) throws ServletException {
@@ -35,7 +37,7 @@ public class LgDispatcherServlet extends HttpServlet {
         String contextConfigLocation = config.getInitParameter("contextConfigLocation");
         doLoadConfig(contextConfigLocation);
         //2.扫描相关的类，扫描注解
-
+        doScan(properties.getProperty("scanPackage"));
         //3.初始bean对象(实现IOC容器,基于注解)
 
         //4.实现依赖注入
@@ -68,7 +70,6 @@ public class LgDispatcherServlet extends HttpServlet {
      */
     private void doLoadConfig(String contextConfigLocation){
         InputStream resourceAsStream = this.getClass().getClassLoader().getResourceAsStream(contextConfigLocation);
-
         try {
             properties.load(resourceAsStream);
         } catch (IOException e) {
@@ -80,7 +81,39 @@ public class LgDispatcherServlet extends HttpServlet {
      * 扫描
      * @param scanPackage
      */
-    private void doInstance(String scanPackage){
-//        Thread.currentThread().getContextClassLoader().getResource("").getPath()
+    private void doScan(String scanPackage){
+        String scanPackagePath = Thread.currentThread().getContextClassLoader().getResource("").getPath() + scanPackage.replaceAll("\\.", "/");
+        File pack = new File(scanPackage);
+        File[] files = pack.listFiles();
+
+        for (File file:files){
+            if (file.isDirectory()){//判断是否是目录 scanpackage
+                doScan(scanPackage+"."+file.getName());
+            }else if(file.getName().endsWith(".class")){
+                String className = scanPackage + "." + file.getName().replaceAll(".class", "");
+                classNames.add(className);
+            }
+        }
+    }
+
+    /**
+     * IOC容器
+     * 基于classNames缓存的类的全限定类名，以及反射技术，完成对象创建和管理
+     */
+    private void doInstance(){
+
+    }
+
+    /**
+     * 首字母小写
+     * @param str
+     * @return
+     */
+    public String lowerFirst(String str){
+        char[] chars = str.toCharArray();
+        if ('A'<=chars[0]||'Z'>=chars[0]){
+            chars[0] +=32;
+        }
+        return String.valueOf(chars);
     }
 }
