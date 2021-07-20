@@ -5,6 +5,7 @@ import com.lagou.myself.mvcframework.annotations.LagouController;
 import com.lagou.myself.mvcframework.annotations.LagouRequestMapping;
 import com.lagou.myself.mvcframework.annotations.LagouService;
 import com.lagou.myself.mvcframework.pojo.Handler;
+import org.apache.commons.lang3.StringUtils;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -15,9 +16,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.*;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -73,7 +76,59 @@ public class LgDispatcherServlet extends HttpServlet {
      */
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        super.doPost(req, resp);
+        //处理请求: 根据url 找到对应的Method方法，进行调用
+        Handler handler = getHandler(req);
+        //获取url
+        //反射调用,需要传入对象，传入参数，此处无法完成调用，没有把对象缓存起来，也没有参数！改造initHandlerMapping（）
+       if (handler==null){
+           resp.getWriter().write("404 not found");
+           return;
+       }
+       //参数绑定
+        //获取所有参数类型的数组，这个数组的长度就是我们最后要传入的args数组的长度
+        Class<?>[] parameterTypes = handler.getMethod().getParameterTypes();
+        //根据上述数组长度重新见一个新的参数数组(新的数组要传入反射调用的)
+        Object[] paraValues=new Object[parameterTypes.length];
+        //以下就是为了向参数数组中簺值，而且还得保证参数的顺序和方法中的形参顺序一致
+        Map<String, String[]> parameterMap = req.getParameterMap();
+        //遍历request中的所有参数(填充除了request,response之外的参数)
+        for (Map.Entry<String,String[]> param:parameterMap.entrySet() ){
+            String value = StringUtils.join(param.getValue(), ",");
+            //如果参数和方法中的参数匹配上了，填充数据
+            if (!handler.getParamIndexMapping().containsKey(param.getKey())){
+                continue;
+            }
+            //方法形参确实有该参数，找到他的索引位置，对应的把参数值放入paraValues
+            Integer index = handler.getParamIndexMapping().get(param.getKey());
+            paraValues[index]=value;//把前台传递过来的参数值填充到对应的位置去
+        }
+        Integer requestIndex = handler.getParamIndexMapping().get(HttpServletRequest.class.getSimpleName());
+        paraValues[requestIndex]=req;
+        Integer reponseIndex = handler.getParamIndexMapping().get(HttpServletResponse.class.getSimpleName());
+        paraValues[reponseIndex]=resp;
+        //最终调用handler的method属性
+        try {
+            handler.getMethod().invoke(handler.getController(),paraValues);
+        }catch (IllegalAccessException e){
+            e.printStackTrace();
+        }catch (InvocationTargetException e){
+            e.printStackTrace();
+        }
+    }
+
+    private Handler getHandler(HttpServletRequest req) {
+        if (handlerMapping.isEmpty()) {
+            return null;
+        }
+        String requestURI = req.getRequestURI();
+        for (Handler handler : handlerMapping) {
+            Matcher matcher = handler.getPattern().matcher(requestURI);
+            if (!matcher.matches()) {
+                continue;
+            }
+            return handler;
+        }
+        return null;
     }
 
     /**
@@ -251,4 +306,6 @@ public class LgDispatcherServlet extends HttpServlet {
             }
         }
     }
+
+
 }
